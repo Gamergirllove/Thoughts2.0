@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Shows &middot; Wavecast{% endblock %}
+{% block content %}
+
+<div class="two-col">
+  <div class="panel">
+    <h2>New Show</h2>
+    <form id="show-form">
+      <label for="title">Title</label>
+      <input type="text" id="title" name="title" required placeholder="The Midnight Frequency">
+
+      <label for="description">Description</label>
+      <textarea id="description" name="description" placeholder="What's this show about?"></textarea>
+
+      <label for="author">Host / Author</label>
+      <input type="text" id="author" name="author" placeholder="Your name">
+
+      <label for="image_url">Cover Image URL</label>
+      <input type="url" id="image_url" name="image_url" placeholder="https://...">
+
+      <label for="base_url">Base URL <span style="text-transform:none;font-weight:400;">(where this app is hosted, e.g. https://yourapp.com)</span></label>
+      <input type="url" id="base_url" name="base_url" required placeholder="https://yourapp.com" value="{{ request_base_url }}">
+
+      <div style="margin-top:18px;">
+        <button type="submit">Create Show</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>How auto-publish works</h2>
+    <p style="font-size:13px; line-height:1.6; color: var(--text-dim);">
+      Upload a raw voice note in the Episode Manager. Wavecast splices in your intro, mid-roll sponsor read,
+      and outro automatically, then re-publishes to your show's RSS feed instantly &mdash; no manual export.
+      Swap the sponsor clip any time from an episode's card and the feed updates in place.
+    </p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Your Shows <span class="count" id="show-count"></span></h2>
+  <div class="card-grid" id="show-list">
+    <div class="empty-state">Loading shows&hellip;</div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadShows() {
+  const list = document.getElementById('show-list');
+  try {
+    const res = await fetch('/shows');
+    const shows = await res.json();
+    document.getElementById('show-count').textContent = shows.length;
+    if (!shows.length) {
+      list.innerHTML = '<div class="empty-state">No shows yet. Create one to the left &mdash; that\'s your first frequency on air.</div>';
+      return;
+    }
+    list.innerHTML = shows.map(s => `
+      <div class="card">
+        <h3>${escapeHtml(s.title)}</h3>
+        <p>${s.episode_count} episode${s.episode_count === 1 ? '' : 's'} &middot; ${s.intro_path ? 'intro set' : 'no intro'}</p>
+        <div class="card-actions">
+          <a class="btn" href="/shows/${s.id}/rss.xml" target="_blank">RSS Feed</a>
+          <a class="btn secondary" href="/episodes-page?show_id=${s.id}">Episodes</a>
+          <a class="btn secondary" href="/settings-page?show_id=${s.id}">Settings</a>
+        </div>
+      </div>
+    `).join('');
+  } catch (e) {
+    list.innerHTML = '<div class="empty-state">Could not reach the studio backend.</div>';
+  }
+}
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+document.getElementById('show-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const fd = new FormData(e.target);
+  try {
+    await postForm('/shows', fd);
+    toast('Show created &mdash; you\'re on air.');
+    e.target.reset();
+    document.getElementById('base_url').value = "{{ request_base_url }}";
+    loadShows();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+loadShows();
+</script>
+{% endblock %}

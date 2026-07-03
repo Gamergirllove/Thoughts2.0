@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+{% block title %}Episode Manager &middot; Wavecast{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h2>Select Show</h2>
+  <select id="show-select"></select>
+</div>
+
+<div class="two-col">
+  <div class="panel">
+    <h2>Upload Voice Note</h2>
+    <form id="episode-form">
+      <label for="ep-title">Episode Title</label>
+      <input type="text" id="ep-title" name="title" required placeholder="Episode 12: Late Night Signals">
+
+      <label for="ep-description">Show Notes</label>
+      <textarea id="ep-description" name="description" placeholder="What happens in this episode?"></textarea>
+
+      <label>Voice Note File</label>
+      <div class="file-drop" id="ep-drop">
+        <div>Drop audio file here, or click to browse</div>
+        <div class="fname" id="ep-fname"></div>
+        <input type="file" id="ep-file" name="voice_note" accept="audio/*" required>
+      </div>
+
+      <div style="margin-top:18px;">
+        <button type="submit">Assemble &amp; Publish</button>
+      </div>
+      <p class="helper-text">Intro, outro, and sponsor clips are pulled automatically from Settings.</p>
+    </form>
+  </div>
+
+  <div class="panel">
+    <h2>Swap Sponsor Clip</h2>
+    <p style="font-size:12px;color:var(--text-dim);margin-top:0;">
+      Pick a published episode and drop in a new sponsor read &mdash; the audio and RSS feed re-sync immediately.
+    </p>
+    <label for="sponsor-episode-select">Episode</label>
+    <select id="sponsor-episode-select"></select>
+
+    <label>New Sponsor Clip</label>
+    <div class="file-drop" id="sponsor-drop">
+      <div>Drop sponsor audio here, or click to browse</div>
+      <div class="fname" id="sponsor-fname"></div>
+      <input type="file" id="sponsor-file" accept="audio/*" required>
+    </div>
+
+    <div style="margin-top:18px;">
+      <button type="button" id="sponsor-swap-btn" class="secondary">Swap &amp; Re-sync</button>
+    </div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Episodes <span class="count" id="ep-count"></span></h2>
+  <div id="episode-list">
+    <div class="empty-state">Select a show above to see its episodes.</div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentShowId = new URLSearchParams(location.search).get('show_id');
+let allEpisodes = [];
+
+initFileDrop('ep-drop', 'ep-file', 'ep-fname');
+initFileDrop('sponsor-drop', 'sponsor-file', 'sponsor-fname');
+
+async function loadShowsIntoSelect() {
+  const res = await fetch('/shows');
+  const shows = await res.json();
+  const sel = document.getElementById('show-select');
+  if (!shows.length) {
+    sel.innerHTML = '<option>No shows yet &mdash; create one first</option>';
+    return;
+  }
+  sel.innerHTML = shows.map(s => `<option value="${s.id}">${s.title}</option>`).join('');
+  if (currentShowId && shows.some(s => String(s.id) === currentShowId)) {
+    sel.value = currentShowId;
+  } else {
+    currentShowId = sel.value;
+  }
+  loadEpisodes();
+}
+
+document.getElementById('show-select').addEventListener('change', (e) => {
+  currentShowId = e.target.value;
+  loadEpisodes();
+});
+
+async function loadEpisodes() {
+  const list = document.getElementById('episode-list');
+  const sponsorSel = document.getElementById('sponsor-episode-select');
+  if (!currentShowId) return;
+  const res = await fetch(`/shows/${currentShowId}/episodes-list`);
+  allEpisodes = await res.json();
+  document.getElementById('ep-count').textContent = allEpisodes.length;
+
+  if (!allEpisodes.length) {
+    list.innerHTML = '<div class="empty-state">No episodes on this frequency yet. Upload a voice note above.</div>';
+    sponsorSel.innerHTML = '<option>No episodes yet</option>';
+    return;
+  }
+
+  sponsorSel.innerHTML = allEpisodes.map(e => `<option value="${e.id}">${escapeHtml(e.title)}</option>`).join('');
+
+  list.innerHTML = allEpisodes.map(e => `
+    <div class="ep-row">
+      <div class="ep-meta">
+        <h4>${escapeHtml(e.title)} <span class="status-pill ${e.published ? 'live' : 'draft'}">${e.published ? 'Live' : 'Draft'}</span></h4>
+        <div class="ep-sub">${formatDuration(e.duration_seconds)} &middot; ${formatBytes(e.file_size)} &middot; ${e.pub_date}</div>
+        <audio controls src="/audio/${e.id}"></audio>
+      </div>
+    </div>
+  `).join('');
+}
+
+function escapeHtml(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+document.getElementById('episode-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  if (!currentShowId) { toast('Pick a show first', true); return; }
+  const fd = new FormData(e.target);
+  try {
+    await postForm(`/shows/${currentShowId}/episodes`, fd);
+    toast('Episode assembled and published.');
+    e.target.reset();
+    document.getElementById('ep-fname').textContent = '';
+    loadEpisodes();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+document.getElementById('sponsor-swap-btn').addEventListener('click', async () => {
+  const epId = document.getElementById('sponsor-episode-select').value;
+  const fileInput = document.getElementById('sponsor-file');
+  if (!epId || !fileInput.files.length) { toast('Pick an episode and a file', true); return; }
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  try {
+    await postForm(`/episodes/${epId}/sponsor`, fd);
+    toast('Sponsor swapped &mdash; feed re-synced.');
+    fileInput.value = '';
+    document.getElementById('sponsor-fname').textContent = '';
+    loadEpisodes();
+  } catch (err) {
+    toast(err.message, true);
+  }
+});
+
+loadShowsIntoSelect();
+</script>
+{% endblock %}

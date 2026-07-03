@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Settings &middot; Wavecast{% endblock %}
+{% block content %}
+
+<div class="panel">
+  <h2>Select Show</h2>
+  <select id="show-select"></select>
+</div>
+
+<div class="two-col">
+  <div class="panel">
+    <h2>Intro Clip</h2>
+    <div class="file-drop" id="intro-drop">
+      <div>Drop intro audio here, or click to browse</div>
+      <div class="fname" id="intro-fname"></div>
+      <input type="file" id="intro-file" accept="audio/*">
+    </div>
+    <div style="margin-top:14px;">
+      <button type="button" class="secondary" id="intro-upload-btn">Upload Intro</button>
+    </div>
+    <p class="helper-text" id="intro-current"></p>
+  </div>
+
+  <div class="panel">
+    <h2>Outro Clip</h2>
+    <div class="file-drop" id="outro-drop">
+      <div>Drop outro audio here, or click to browse</div>
+      <div class="fname" id="outro-fname"></div>
+      <input type="file" id="outro-file" accept="audio/*">
+    </div>
+    <div style="margin-top:14px;">
+      <button type="button" class="secondary" id="outro-upload-btn">Upload Outro</button>
+    </div>
+    <p class="helper-text" id="outro-current"></p>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Default Sponsor Clip</h2>
+  <p style="font-size:12px;color:var(--text-dim);margin-top:0;">
+    Used automatically for every new episode. Swap it per-episode from the Episode Manager any time.
+  </p>
+  <div class="file-drop" id="sponsor-drop">
+    <div>Drop sponsor audio here, or click to browse</div>
+    <div class="fname" id="sponsor-fname"></div>
+    <input type="file" id="sponsor-file" accept="audio/*">
+  </div>
+  <div style="margin-top:14px;">
+    <button type="button" class="secondary" id="sponsor-upload-btn">Upload Sponsor</button>
+  </div>
+  <p class="helper-text" id="sponsor-current"></p>
+</div>
+
+<div class="panel">
+  <h2>RSS Feed</h2>
+  <p style="font-size:12px;color:var(--text-dim);margin-top:0;">
+    Point Spotify for Podcasters, Apple Podcasts Connect, or any podcast host at this URL.
+  </p>
+  <input type="text" id="rss-url" readonly>
+  <div style="margin-top:14px;">
+    <a class="btn" id="rss-open" target="_blank">Open Feed</a>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentShowId = new URLSearchParams(location.search).get('show_id');
+let currentShow = null;
+
+initFileDrop('intro-drop', 'intro-file', 'intro-fname');
+initFileDrop('outro-drop', 'outro-file', 'outro-fname');
+initFileDrop('sponsor-drop', 'sponsor-file', 'sponsor-fname');
+
+async function loadShowsIntoSelect() {
+  const res = await fetch('/shows');
+  const shows = await res.json();
+  const sel = document.getElementById('show-select');
+  if (!shows.length) {
+    sel.innerHTML = '<option>No shows yet &mdash; create one first</option>';
+    return;
+  }
+  sel.innerHTML = shows.map(s => `<option value="${s.id}">${s.title}</option>`).join('');
+  if (currentShowId && shows.some(s => String(s.id) === currentShowId)) {
+    sel.value = currentShowId;
+  } else {
+    currentShowId = sel.value;
+  }
+  loadShowDetail();
+}
+
+document.getElementById('show-select').addEventListener('change', (e) => {
+  currentShowId = e.target.value;
+  loadShowDetail();
+});
+
+async function loadShowDetail() {
+  if (!currentShowId) return;
+  const res = await fetch(`/shows/${currentShowId}`);
+  currentShow = await res.json();
+  document.getElementById('intro-current').textContent = currentShow.intro_path ? `Current: ${currentShow.intro_path.split('/').pop()}` : 'No intro set yet.';
+  document.getElementById('outro-current').textContent = currentShow.outro_path ? `Current: ${currentShow.outro_path.split('/').pop()}` : 'No outro set yet.';
+  document.getElementById('sponsor-current').textContent = currentShow.sponsor_path ? `Current: ${currentShow.sponsor_path.split('/').pop()}` : 'No sponsor clip set yet.';
+  const rssUrl = `${currentShow.base_url}/shows/${currentShow.id}/rss.xml`;
+  document.getElementById('rss-url').value = rssUrl;
+  document.getElementById('rss-open').href = `/shows/${currentShow.id}/rss.xml`;
+}
+
+async function uploadClip(kind, fileInputId) {
+  const fileInput = document.getElementById(fileInputId);
+  if (!currentShowId) { toast('Pick a show first', true); return; }
+  if (!fileInput.files.length) { toast('Choose a file first', true); return; }
+  const fd = new FormData();
+  fd.append('file', fileInput.files[0]);
+  try {
+    await postForm(`/shows/${currentShowId}/${kind}`, fd);
+    toast(`${kind[0].toUpperCase() + kind.slice(1)} updated.`);
+    fileInput.value = '';
+    loadShowDetail();
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+document.getElementById('intro-upload-btn').addEventListener('click', () => uploadClip('intro', 'intro-file'));
+document.getElementById('outro-upload-btn').addEventListener('click', () => uploadClip('outro', 'outro-file'));
+document.getElementById('sponsor-upload-btn').addEventListener('click', () => uploadClip('sponsor', 'sponsor-file'));
+
+loadShowsIntoSelect();
+</script>
+{% endblock %}

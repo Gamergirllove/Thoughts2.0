@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Wavecast{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="cabinet">
+    <div class="brand-plate">
+      <div>
+        <h1>Wavecast</h1>
+        <div class="tagline">VOICE NOTE &rarr; BROADCAST-READY EPISODE</div>
+      </div>
+      <div class="on-air">
+        <span class="on-air-dot"></span> AUTO-PUBLISHING
+      </div>
+    </div>
+
+    <nav class="tuning-dial">
+      <div class="dial-scale">
+        <a class="dial-stop {% if active_page == 'shows' %}active{% endif %}" href="/">
+          <span class="freq">88.1</span> Shows
+        </a>
+        <a class="dial-stop {% if active_page == 'episodes' %}active{% endif %}" href="/episodes-page">
+          <span class="freq">94.5</span> Episode Manager
+        </a>
+        <a class="dial-stop {% if active_page == 'settings' %}active{% endif %}" href="/settings-page">
+          <span class="freq">101.7</span> Settings
+        </a>
+      </div>
+      <div class="dial-needle"></div>
+    </nav>
+
+    {% block content %}{% endblock %}
+
+    <div class="vu-meter">
+      <span class="vu-label">SIGNAL</span>
+      <div class="vu-bars" id="vu">
+        {% for i in range(24) %}<span></span>{% endfor %}
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

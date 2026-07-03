@@ -1,0 +1,6 @@
+fastapi
+uvicorn[standard]
+python-multipart
+pydub
+feedgen
+mutagen

@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+podcast.db
+uploads/
+episodes/
+.env
