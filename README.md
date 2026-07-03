@@ -13,29 +13,55 @@ Open http://localhost:8000
 
 ffmpeg is required (pydub dependency).
 
-## Free persistent storage (archive.org)
+## Free persistent storage
 
 Free hosts (Render free tier, etc.) wipe local disk on restart/redeploy. To
 keep shows, episodes, and audio files permanently without paying for storage,
-Wavecast can back everything up to a free archive.org item and restore it on
-startup.
+Wavecast backs everything up to a storage backend and restores it on startup.
+Two options, pick one:
+
+### Option A — Your own computer (`home-storage-server/`)
+
+Run a tiny storage server on a computer you leave on, and point the Render
+app at it. Completely free, files stay under your control.
+
+1. On your computer:
+   ```
+   cd home-storage-server
+   pip install -r requirements.txt
+   export STORAGE_TOKEN=pick-a-long-random-secret
+   python server.py
+   ```
+2. Expose it to the internet with a free tunnel — [Tailscale Funnel](https://tailscale.com/kb/1223/funnel)
+   is the simplest free option that gives you a stable HTTPS URL:
+   ```
+   tailscale funnel 8899
+   ```
+   This prints a URL like `https://your-machine.your-tailnet.ts.net`.
+3. On Render, set these environment variables on the **Wavecast** service:
+   - `HOME_STORAGE_URL` = the URL from step 2
+   - `HOME_STORAGE_TOKEN` = the same secret from step 1
+
+Your computer needs to be on and connected for the app to save/load files.
+If it's off, the app still runs on Render's local disk temporarily but won't
+persist until your computer is back online and the app restarts.
+
+### Option B — archive.org (no computer required, always-on)
 
 1. Create a free account: https://archive.org/account/signup
 2. Get S3-like keys: https://archive.org/account/s3.php
-3. Set these environment variables (copy `.env.example` to `.env` for local
-   dev, or set them in your host's dashboard for deployment):
+3. Set environment variables on Render:
    - `IA_ACCESS_KEY`
    - `IA_SECRET_KEY`
    - `IA_ITEM` (a unique identifier for your data, e.g. `wavecast-yourname`)
 
-Once set, every show/episode/clip upload is mirrored to archive.org, and the
-app pulls everything back down automatically on startup. Without these vars
-set, the app just runs on local disk as before (fine for local use, not
-persistent on ephemeral hosts).
-
 **Note:** archive.org items are public by nature — anyone with the direct
 file URL could access an audio file. Fine for content you intend to publish
-anyway; don't use it for anything that must stay private.
+anyway; don't use it for anything that must stay private. The home-storage
+option (A) is private since it's on hardware you control.
+
+If neither is configured, the app just runs on local disk (fine for local
+use, not persistent on ephemeral hosts).
 
 ## Deploy on Render (free)
 
