@@ -198,9 +198,16 @@ def create_episode(
             (final_path, duration, size, episode_id),
         )
 
-    archive.upload_file(raw_path, raw_path)
-    archive.upload_file(final_path, final_path)
+    raw_uploaded = archive.upload_file(raw_path, raw_path)
+    final_uploaded = archive.upload_file(final_path, final_path)
     backup_db()
+
+    if archive.enabled() and raw_uploaded and final_uploaded:
+        for p in (raw_path, final_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
     return {"episode_id": episode_id, "duration_seconds": duration, "published": True}
 
@@ -233,9 +240,16 @@ def update_episode_sponsor(episode_id: int, file: UploadFile = File(...)):
             (duration, size, episode_id),
         )
 
-    archive.upload_file(sponsor_path, sponsor_path)
-    archive.upload_file(final_path, final_path)
+    sponsor_uploaded = archive.upload_file(sponsor_path, sponsor_path)
+    final_uploaded = archive.upload_file(final_path, final_path)
     backup_db()
+
+    if archive.enabled() and sponsor_uploaded and final_uploaded:
+        for p in (sponsor_path, final_path):
+            try:
+                os.remove(p)
+            except OSError:
+                pass
 
     return {"episode_id": episode_id, "duration_seconds": duration, "resynced": True}
 

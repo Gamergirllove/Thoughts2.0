@@ -23,24 +23,37 @@ Two options, pick one:
 ### Option A — Your own computer (`home-storage-server/`)
 
 Run a tiny storage server on a computer you leave on, and point the Render
-app at it. Completely free, files stay under your control.
+app at it. Files are end-to-end encrypted before they ever leave Render — the
+home server only ever stores ciphertext and never has the key, so even if
+that machine were compromised, an attacker can't read your audio or database,
+and can't feed it anything meaningful either.
 
-1. On your computer:
+1. Generate an encryption key:
+   ```
+   python -c "from crypto_utils import generate_key; print(generate_key())"
+   ```
+2. On your computer (the storage server — does **not** get the encryption key):
    ```
    cd home-storage-server
    pip install -r requirements.txt
    export STORAGE_TOKEN=pick-a-long-random-secret
    python server.py
    ```
-2. Expose it to the internet with a free tunnel — [Tailscale Funnel](https://tailscale.com/kb/1223/funnel)
+3. Expose it to the internet with a free tunnel — [Tailscale Funnel](https://tailscale.com/kb/1223/funnel)
    is the simplest free option that gives you a stable HTTPS URL:
    ```
    tailscale funnel 8899
    ```
    This prints a URL like `https://your-machine.your-tailnet.ts.net`.
-3. On Render, set these environment variables on the **Wavecast** service:
-   - `HOME_STORAGE_URL` = the URL from step 2
-   - `HOME_STORAGE_TOKEN` = the same secret from step 1
+4. On Render, set these environment variables on the **Wavecast** service
+   (the app, not the home server):
+   - `HOME_STORAGE_URL` = the URL from step 3
+   - `HOME_STORAGE_TOKEN` = the same secret from step 2
+   - `HOME_STORAGE_KEY` = the key generated in step 1
+
+If `HOME_STORAGE_KEY` isn't set, the app refuses to upload/download anything
+to/from the home server rather than silently sending plaintext — local files
+are preserved either way.
 
 Your computer needs to be on and connected for the app to save/load files.
 If it's off, the app still runs on Render's local disk temporarily but won't

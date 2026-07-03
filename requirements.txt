@@ -7,3 +7,4 @@ mutagen
 jinja2
 requests
 python-dotenv
+cryptography>=42.0
