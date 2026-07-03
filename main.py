@@ -7,11 +7,39 @@ from fastapi.templating import Jinja2Templates
 from models import init_db, get_db
 from audio import assemble_episode
 from rss import generate_feed
+import archive_storage as archive
+
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
 
 UPLOAD_DIR = "uploads"
 EPISODE_DIR = "episodes"
+DB_FILE = "podcast.db"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(EPISODE_DIR, exist_ok=True)
+
+
+def restore_from_archive():
+    if not archive.enabled():
+        return
+    archive.download_file(DB_FILE, DB_FILE)
+    for name in archive.list_remote_files():
+        if name == DB_FILE:
+            continue
+        if name.startswith(f"{UPLOAD_DIR}/") or name.startswith(f"{EPISODE_DIR}/"):
+            if not os.path.exists(name):
+                archive.download_file(name, name)
+
+
+def backup_db():
+    if archive.enabled():
+        archive.upload_file(DB_FILE, DB_FILE)
+
+
+restore_from_archive()
 
 app = FastAPI(title="Podcast Auto-Publisher")
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -97,7 +125,9 @@ def create_show(
             "INSERT INTO shows (title, description, author, image_url, base_url) VALUES (?, ?, ?, ?, ?)",
             (title, description, author, image_url, base_url),
         )
-        return {"show_id": cur.lastrowid}
+        show_id = cur.lastrowid
+    backup_db()
+    return {"show_id": show_id}
 
 
 @app.post("/shows/{show_id}/intro")
@@ -105,6 +135,8 @@ def upload_intro(show_id: int, file: UploadFile = File(...)):
     path = save_upload(file, f"show_{show_id}")
     with get_db() as db:
         db.execute("UPDATE shows SET intro_path = ? WHERE id = ?", (path, show_id))
+    archive.upload_file(path, path)
+    backup_db()
     return {"intro_path": path}
 
 
@@ -113,6 +145,8 @@ def upload_outro(show_id: int, file: UploadFile = File(...)):
     path = save_upload(file, f"show_{show_id}")
     with get_db() as db:
         db.execute("UPDATE shows SET outro_path = ? WHERE id = ?", (path, show_id))
+    archive.upload_file(path, path)
+    backup_db()
     return {"outro_path": path}
 
 
@@ -121,6 +155,8 @@ def upload_sponsor(show_id: int, file: UploadFile = File(...)):
     path = save_upload(file, f"show_{show_id}")
     with get_db() as db:
         db.execute("UPDATE shows SET sponsor_path = ? WHERE id = ?", (path, show_id))
+    archive.upload_file(path, path)
+    backup_db()
     return {"sponsor_path": path}
 
 
@@ -144,12 +180,16 @@ def create_episode(
         )
         episode_id = cur.lastrowid
 
+        intro_path = archive.ensure_local(show["intro_path"])
+        outro_path = archive.ensure_local(show["outro_path"])
+        sponsor_path = archive.ensure_local(show["sponsor_path"])
+
         final_path = os.path.join(EPISODE_DIR, f"episode_{episode_id}.mp3")
         duration, size = assemble_episode(
             raw_path,
-            show["intro_path"],
-            show["outro_path"],
-            show["sponsor_path"],
+            intro_path,
+            outro_path,
+            sponsor_path,
             final_path,
         )
 
@@ -157,6 +197,10 @@ def create_episode(
             "UPDATE episodes SET final_path = ?, duration_seconds = ?, file_size = ?, published = 1 WHERE id = ?",
             (final_path, duration, size, episode_id),
         )
+
+    archive.upload_file(raw_path, raw_path)
+    archive.upload_file(final_path, final_path)
+    backup_db()
 
     return {"episode_id": episode_id, "duration_seconds": duration, "published": True}
 
@@ -171,11 +215,15 @@ def update_episode_sponsor(episode_id: int, file: UploadFile = File(...)):
 
         sponsor_path = save_upload(file, f"show_{ep['show_id']}/sponsor_override")
 
+        raw_path = archive.ensure_local(ep["raw_path"])
+        intro_path = archive.ensure_local(show["intro_path"])
+        outro_path = archive.ensure_local(show["outro_path"])
+
         final_path = ep["final_path"]
         duration, size = assemble_episode(
-            ep["raw_path"],
-            show["intro_path"],
-            show["outro_path"],
+            raw_path,
+            intro_path,
+            outro_path,
             sponsor_path,
             final_path,
         )
@@ -185,6 +233,10 @@ def update_episode_sponsor(episode_id: int, file: UploadFile = File(...)):
             (duration, size, episode_id),
         )
 
+    archive.upload_file(sponsor_path, sponsor_path)
+    archive.upload_file(final_path, final_path)
+    backup_db()
+
     return {"episode_id": episode_id, "duration_seconds": duration, "resynced": True}
 
 
@@ -192,9 +244,12 @@ def update_episode_sponsor(episode_id: int, file: UploadFile = File(...)):
 def get_audio(episode_id: int):
     with get_db() as db:
         ep = db.execute("SELECT * FROM episodes WHERE id = ?", (episode_id,)).fetchone()
-        if not ep or not ep["final_path"] or not os.path.exists(ep["final_path"]):
+        if not ep or not ep["final_path"]:
             raise HTTPException(404, "audio not found")
-        return FileResponse(ep["final_path"], media_type="audio/mpeg", filename=os.path.basename(ep["final_path"]))
+        local_path = archive.ensure_local(ep["final_path"])
+        if not local_path or not os.path.exists(local_path):
+            raise HTTPException(404, "audio not found")
+        return FileResponse(local_path, media_type="audio/mpeg", filename=os.path.basename(local_path))
 
 
 @app.get("/shows/{show_id}/rss.xml")
@@ -213,5 +268,4 @@ def get_rss(show_id: int):
 
 if __name__ == "__main__":
     import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

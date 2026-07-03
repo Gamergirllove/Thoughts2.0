@@ -1,6 +1,9 @@
-fastapi
-uvicorn[standard]
+fastapi>=0.115
+uvicorn[standard]>=0.30
 python-multipart
 pydub
 feedgen
 mutagen
+jinja2
+requests
+python-dotenv
