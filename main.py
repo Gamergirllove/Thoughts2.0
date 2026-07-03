@@ -1,7 +1,9 @@
 import os
 import shutil
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import FileResponse, Response
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from models import init_db, get_db
 from audio import assemble_episode
 from rss import generate_feed
@@ -12,6 +14,8 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 os.makedirs(EPISODE_DIR, exist_ok=True)
 
 app = FastAPI(title="Podcast Auto-Publisher")
+app.mount("/static", StaticFiles(directory="static"), name="static")
+templates = Jinja2Templates(directory="templates")
 init_db()
 
 
@@ -22,6 +26,62 @@ def save_upload(file: UploadFile, subdir: str) -> str:
     with open(dest, "wb") as f:
         shutil.copyfileobj(file.file, f)
     return dest
+
+
+@app.get("/")
+def shows_page(request: Request):
+    return templates.TemplateResponse(
+        request=request,
+        name="shows.html",
+        context={"active_page": "shows", "request_base_url": str(request.base_url).rstrip("/")},
+    )
+
+
+@app.get("/episodes-page")
+def episodes_page(request: Request):
+    return templates.TemplateResponse(
+        request=request, name="episodes.html", context={"active_page": "episodes"}
+    )
+
+
+@app.get("/settings-page")
+def settings_page(request: Request):
+    return templates.TemplateResponse(
+        request=request, name="settings.html", context={"active_page": "settings"}
+    )
+
+
+@app.get("/shows")
+def list_shows():
+    with get_db() as db:
+        shows = db.execute("SELECT * FROM shows ORDER BY created_at DESC").fetchall()
+        result = []
+        for s in shows:
+            count = db.execute(
+                "SELECT COUNT(*) as c FROM episodes WHERE show_id = ?", (s["id"],)
+            ).fetchone()["c"]
+            row = dict(s)
+            row["episode_count"] = count
+            result.append(row)
+        return result
+
+
+@app.get("/shows/{show_id}")
+def get_show(show_id: int):
+    with get_db() as db:
+        show = db.execute("SELECT * FROM shows WHERE id = ?", (show_id,)).fetchone()
+        if not show:
+            raise HTTPException(404, "show not found")
+        return dict(show)
+
+
+@app.get("/shows/{show_id}/episodes-list")
+def list_episodes(show_id: int):
+    with get_db() as db:
+        episodes = db.execute(
+            "SELECT * FROM episodes WHERE show_id = ? ORDER BY pub_date DESC", (show_id,)
+        ).fetchall()
+        return [dict(e) for e in episodes]
 
 
 @app.post("/shows")
@@ -153,4 +213,5 @@ def get_rss(show_id: int):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
